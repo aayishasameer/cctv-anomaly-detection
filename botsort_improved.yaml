@@ -1,0 +1,40 @@
+# Improved BotSORT Configuration for Better Tracking Consistency
+tracker_type: botsort
+
+# Stricter thresholds for better ID consistency
+track_high_thresh: 0.7          # Higher confidence for track creation (was 0.5)
+track_low_thresh: 0.3           # Higher minimum confidence (was 0.1)  
+new_track_thresh: 0.8           # Much higher threshold for new tracks (was 0.6)
+track_buffer: 50                # Longer buffer to maintain tracks (was 30)
+match_thresh: 0.9               # Stricter matching threshold (was 0.8)
+
+# Improved proximity and appearance matching
+proximity_thresh: 0.3           # Stricter spatial matching (was 0.5)
+appearance_thresh: 0.7          # Stricter appearance matching (was 0.5)
+fuse_score: True
+
+# Enable ReID for better identity consistency
+with_reid: True                 # Enable ReID (was False)
+reid_weights: "osnet_x0_25_msmt17.pt"
+model: "auto"
+
+# Enhanced camera motion compensation
+gmc_method: "sparseOptFlow"
+
+# Device
+device: cpu
+
+# Improved tracking parameters
+max_age: 50                     # Keep tracks longer (was 30)
+min_hits: 5                     # Require more hits to confirm track (was 3)
+
+# Additional parameters for stability
+track_thresh: 0.6               # Detection confidence threshold
+match_thresh_second: 0.2        # Second stage matching threshold
+match_thresh_high: 0.9          # High confidence matching
+match_thresh_low: 0.3           # Low confidence matching
+
+# Kalman filter parameters for smoother tracking
+kalman_format: "xyah"           # Use aspect ratio format
+std_weight_position: 1.0        # Position uncertainty weight
+std_weight_velocity: 1.0        # Velocity uncertainty weight
