@@ -61,11 +61,16 @@ class VariationalAutoEncoder(nn.Module):
         return recon_x, mu, logvar
 
 class FeatureExtractor:
-    """Extract behavioral features from tracked persons"""
+    """Enhanced behavioral feature extractor with multi-scale temporal analysis"""
     
-    def __init__(self, sequence_length: int = 30):
+    def __init__(self, sequence_length: int = 60):  # Increased from 30
         self.sequence_length = sequence_length
         self.track_histories = {}
+        
+        # Multi-scale temporal windows
+        self.short_window = 10   # Short-term patterns
+        self.medium_window = 30  # Medium-term patterns  
+        self.long_window = 60    # Long-term patterns
         
     def extract_features(self, track_id: int, bbox: List[float], frame_idx: int) -> Optional[np.ndarray]:
         """Extract features from a single detection"""
@@ -98,35 +103,64 @@ class FeatureExtractor:
             history['sizes'] = history['sizes'][-self.sequence_length:]
             history['frame_indices'] = history['frame_indices'][-self.sequence_length:]
         
-        # Need minimum sequence length for feature extraction (more frames for stability)
-        if len(history['positions']) < 20:
+        # Need minimum sequence length for feature extraction (reduced for faster response)
+        if len(history['positions']) < 15:  # Reduced from 20
             return None
             
-        return self._compute_behavioral_features(history)
+        return self._compute_enhanced_behavioral_features(history)
     
-    def _compute_behavioral_features(self, history: Dict) -> np.ndarray:
-        """Compute behavioral features from track history"""
+    def _compute_enhanced_behavioral_features(self, history: Dict) -> np.ndarray:
+        """Compute enhanced behavioral features with multi-scale temporal analysis"""
         positions = np.array(history['positions'])
         sizes = np.array(history['sizes'])
+        frame_indices = np.array(history['frame_indices'])
         
         features = []
         
-        # Motion features
+        # === ENHANCED MOTION FEATURES ===
         if len(positions) > 1:
             velocities = np.diff(positions, axis=0)
             speeds = np.linalg.norm(velocities, axis=1)
             
-            # Speed statistics
-            features.extend([
-                np.mean(speeds),
-                np.std(speeds),
-                np.max(speeds),
-                np.min(speeds)
-            ])
+            # Multi-scale speed analysis
+            for window_size in [self.short_window, self.medium_window, min(len(speeds), self.long_window)]:
+                if len(speeds) >= window_size:
+                    recent_speeds = speeds[-window_size:]
+                    features.extend([
+                        np.mean(recent_speeds),
+                        np.std(recent_speeds),
+                        np.max(recent_speeds),
+                        np.min(recent_speeds),
+                        np.percentile(recent_speeds, 75) - np.percentile(recent_speeds, 25)  # IQR
+                    ])
+                else:
+                    features.extend([0, 0, 0, 0, 0])
             
-            # Direction changes
+            # === ACCELERATION FEATURES ===
+            if len(velocities) > 1:
+                accelerations = np.diff(velocities, axis=0)
+                acceleration_magnitudes = np.linalg.norm(accelerations, axis=1)
+                
+                features.extend([
+                    np.mean(acceleration_magnitudes),
+                    np.std(acceleration_magnitudes),
+                    np.max(acceleration_magnitudes),
+                    len([x for x in acceleration_magnitudes if x > np.mean(acceleration_magnitudes) + 2*np.std(acceleration_magnitudes)])  # Sudden accelerations
+                ])
+            else:
+                features.extend([0, 0, 0, 0])
+            
+            # === ENHANCED DIRECTION ANALYSIS ===
             if len(velocities) > 1:
                 direction_changes = []
+                velocity_angles = []
+                
+                for i in range(len(velocities)):
+                    if np.linalg.norm(velocities[i]) > 0:
+                        angle = np.arctan2(velocities[i][1], velocities[i][0])
+                        velocity_angles.append(angle)
+                
+                # Direction change analysis
                 for i in range(1, len(velocities)):
                     if np.linalg.norm(velocities[i-1]) > 0 and np.linalg.norm(velocities[i]) > 0:
                         cos_angle = np.dot(velocities[i-1], velocities[i]) / (
@@ -140,46 +174,119 @@ class FeatureExtractor:
                     features.extend([
                         np.mean(direction_changes),
                         np.std(direction_changes),
-                        len([x for x in direction_changes if x > np.pi/2])  # Sharp turns
+                        len([x for x in direction_changes if x > np.pi/2]),  # Sharp turns
+                        len([x for x in direction_changes if x > np.pi/4]),  # Moderate turns
+                        np.max(direction_changes)  # Maximum direction change
                     ])
                 else:
-                    features.extend([0, 0, 0])
+                    features.extend([0, 0, 0, 0, 0])
+                
+                # Directional consistency
+                if len(velocity_angles) > 1:
+                    angle_std = np.std(velocity_angles)
+                    features.append(angle_std)
+                else:
+                    features.append(0)
             else:
-                features.extend([0, 0, 0])
+                features.extend([0, 0, 0, 0, 0, 0])
         else:
-            features.extend([0, 0, 0, 0, 0, 0, 0])
+            # No motion data available
+            features.extend([0] * 21)  # 15 + 4 + 6 motion features
         
-        # Size variation features
+        # === ENHANCED SIZE VARIATION FEATURES ===
         size_areas = sizes[:, 2]
-        features.extend([
-            np.mean(size_areas),
-            np.std(size_areas),
-            np.max(size_areas) - np.min(size_areas)
-        ])
+        size_widths = sizes[:, 0]
+        size_heights = sizes[:, 1]
         
-        # Position features
-        features.extend([
-            np.mean(positions[:, 0]),  # avg x
-            np.mean(positions[:, 1]),  # avg y
-            np.std(positions[:, 0]),   # x variance
-            np.std(positions[:, 1]),   # y variance
-        ])
+        for size_data, name in [(size_areas, 'area'), (size_widths, 'width'), (size_heights, 'height')]:
+            features.extend([
+                np.mean(size_data),
+                np.std(size_data),
+                np.max(size_data) - np.min(size_data),
+                np.percentile(size_data, 75) - np.percentile(size_data, 25)  # IQR
+            ])
         
-        # Trajectory features
+        # === ENHANCED POSITION FEATURES ===
+        # Multi-scale position analysis
+        for window_size in [self.short_window, self.medium_window, min(len(positions), self.long_window)]:
+            if len(positions) >= window_size:
+                recent_positions = positions[-window_size:]
+                features.extend([
+                    np.mean(recent_positions[:, 0]),  # avg x
+                    np.mean(recent_positions[:, 1]),  # avg y
+                    np.std(recent_positions[:, 0]),   # x variance
+                    np.std(recent_positions[:, 1]),   # y variance
+                ])
+            else:
+                features.extend([0, 0, 0, 0])
+        
+        # === ENHANCED TRAJECTORY FEATURES ===
         if len(positions) > 2:
-            # Path length
-            path_length = np.sum(np.linalg.norm(np.diff(positions, axis=0), axis=1))
-            # Displacement
+            # Path analysis
+            path_segments = np.linalg.norm(np.diff(positions, axis=0), axis=1)
+            path_length = np.sum(path_segments)
             displacement = np.linalg.norm(positions[-1] - positions[0])
+            
             # Tortuosity (path efficiency)
             tortuosity = path_length / displacement if displacement > 0 else 0
             
-            features.extend([path_length, displacement, tortuosity])
+            # Path complexity metrics
+            segment_variations = np.std(path_segments) if len(path_segments) > 1 else 0
+            
+            # Bounding box of trajectory
+            min_x, max_x = np.min(positions[:, 0]), np.max(positions[:, 0])
+            min_y, max_y = np.min(positions[:, 1]), np.max(positions[:, 1])
+            trajectory_area = (max_x - min_x) * (max_y - min_y)
+            
+            features.extend([
+                path_length,
+                displacement, 
+                tortuosity,
+                segment_variations,
+                trajectory_area,
+                (max_x - min_x),  # trajectory width
+                (max_y - min_y)   # trajectory height
+            ])
+        else:
+            features.extend([0, 0, 0, 0, 0, 0, 0])
+        
+        # === TEMPORAL FEATURES ===
+        if len(frame_indices) > 1:
+            frame_diffs = np.diff(frame_indices)
+            features.extend([
+                np.mean(frame_diffs),  # Average frame gap
+                np.std(frame_diffs),   # Frame gap consistency
+                np.max(frame_diffs)    # Maximum gap (tracking interruptions)
+            ])
         else:
             features.extend([0, 0, 0])
         
-        # Pad or truncate to fixed size
-        target_size = 128
+        # === BEHAVIORAL PATTERN FEATURES ===
+        # Stopping behavior (low speed periods)
+        if len(positions) > 1:
+            velocities = np.diff(positions, axis=0)
+            speeds = np.linalg.norm(velocities, axis=1)
+            
+            low_speed_threshold = np.percentile(speeds, 25) if len(speeds) > 4 else 0
+            stop_periods = len([s for s in speeds if s <= low_speed_threshold])
+            
+            # Loitering detection (staying in small area)
+            if len(positions) >= 10:
+                recent_positions = positions[-10:]
+                position_spread = np.std(recent_positions, axis=0)
+                loitering_score = 1.0 / (1.0 + np.mean(position_spread))
+            else:
+                loitering_score = 0
+            
+            features.extend([
+                stop_periods / len(speeds) if len(speeds) > 0 else 0,  # Stop ratio
+                loitering_score
+            ])
+        else:
+            features.extend([0, 0])
+        
+        # Pad or truncate to fixed size (increased to 256D)
+        target_size = 256
         if len(features) < target_size:
             features.extend([0] * (target_size - len(features)))
         else:
@@ -251,9 +358,15 @@ class AnomalyDetector:
                 errors = torch.mean((batch_data - recon_batch) ** 2, dim=1)
                 reconstruction_errors.extend(errors.cpu().numpy())
         
-        # Set threshold as 99.99th percentile of reconstruction errors (0.01% detection rate)
-        self.threshold = np.percentile(reconstruction_errors, 99.99)
-        print(f"Anomaly threshold set to: {self.threshold:.4f}")
+        # Set threshold as 95th percentile of reconstruction errors (5% detection rate)
+        # This is more balanced - was 99.99th (too strict, low recall)
+        self.threshold = np.percentile(reconstruction_errors, 95.0)
+        print(f"Anomaly threshold set to: {self.threshold:.4f} (95th percentile)")
+        
+        # Also store additional thresholds for ensemble approach
+        self.threshold_90 = np.percentile(reconstruction_errors, 90.0)
+        self.threshold_98 = np.percentile(reconstruction_errors, 98.0)
+        print(f"Additional thresholds - 90th: {self.threshold_90:.4f}, 98th: {self.threshold_98:.4f}")
         
         # Save model
         self.save_model()
@@ -266,6 +379,8 @@ class AnomalyDetector:
             'model_state_dict': self.model.state_dict(),
             'scaler': self.scaler,
             'threshold': self.threshold,
+            'threshold_90': self.threshold_90,
+            'threshold_98': self.threshold_98,
             'input_dim': self.model.encoder[0].in_features
         }, self.model_path)
         
@@ -284,11 +399,15 @@ class AnomalyDetector:
         self.scaler = checkpoint['scaler']
         self.threshold = checkpoint['threshold']
         
+        # Load additional thresholds if available (for ensemble approach)
+        self.threshold_90 = checkpoint.get('threshold_90', self.threshold * 0.8)
+        self.threshold_98 = checkpoint.get('threshold_98', self.threshold * 1.2)
+        
         self.model.eval()
         print(f"Model loaded from {self.model_path}")
     
     def detect_anomaly(self, track_id: int, bbox: List[float], frame_idx: int) -> Tuple[bool, float]:
-        """Detect if current behavior is anomalous"""
+        """Detect if current behavior is anomalous using ensemble approach"""
         if self.model is None:
             raise ValueError("Model not loaded. Call load_model() first.")
         
@@ -306,7 +425,22 @@ class AnomalyDetector:
             recon_features, _, _ = self.model(features_tensor)
             reconstruction_error = torch.mean((features_tensor - recon_features) ** 2).item()
         
-        # Check if anomalous
-        is_anomaly = reconstruction_error > self.threshold
+        # Ensemble approach with multiple thresholds
+        is_anomaly_95 = reconstruction_error > self.threshold        # 95th percentile (main)
+        is_anomaly_90 = reconstruction_error > self.threshold_90     # 90th percentile (sensitive)
+        is_anomaly_98 = reconstruction_error > self.threshold_98     # 98th percentile (conservative)
         
-        return is_anomaly, reconstruction_error
+        # Weighted ensemble decision
+        ensemble_score = (
+            0.6 * float(is_anomaly_95) +    # Main threshold (60% weight)
+            0.3 * float(is_anomaly_90) +    # Sensitive threshold (30% weight)  
+            0.1 * float(is_anomaly_98)      # Conservative threshold (10% weight)
+        )
+        
+        # Final decision based on ensemble score
+        is_anomaly = ensemble_score > 0.5
+        
+        # Normalize reconstruction error for consistent scoring
+        normalized_score = min(reconstruction_error / self.threshold, 2.0)
+        
+        return is_anomaly, normalized_score

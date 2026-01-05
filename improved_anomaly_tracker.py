@@ -31,23 +31,33 @@ class ImprovedAnomalyTracker:
             print("❌ Anomaly detection model not found!")
             raise
         
-        # Improved tracking parameters
+        # Enhanced tracking parameters - FIXED for better detection
         self.track_anomaly_scores = {}
         self.track_anomaly_history = {}
         self.track_confidence_history = {}
         self.track_position_history = {}
         self.track_last_seen = {}
         
-        # Stricter anomaly confirmation parameters
-        self.anomaly_threshold_frames = 15      # More frames needed (was 10)
-        self.anomaly_confirmation_ratio = 0.8   # 80% of frames must be anomalous (was 70%)
-        self.min_track_length = 30              # Minimum track length before anomaly detection
-        self.confidence_threshold = 0.6         # Minimum detection confidence
+        # FIXED: More responsive anomaly detection parameters
+        self.track_exponential_scores = {}  # Exponentially weighted anomaly scores
+        self.decay_factor = 0.8             # Faster decay for quicker response
+        self.anomaly_threshold_frames = 8   # REDUCED: Faster anomaly confirmation
+        self.anomaly_confirmation_ratio = 0.6  # REDUCED: 60% confirmation (was 75%)
+        self.min_track_length = 12          # REDUCED: Much faster response (was 25)
+        self.confidence_threshold = 0.4     # REDUCED: Lower threshold for better detection
         
-        # ID consistency tracking
-        self.track_id_mapping = {}              # Map inconsistent IDs
+        # Context-aware detection parameters
+        self.zone_sensitivity = {
+            'entrance': 1.2,    # Higher sensitivity near entrances
+            'exit': 1.2,        # Higher sensitivity near exits  
+            'center': 1.0,      # Normal sensitivity in center
+            'corner': 0.8       # Lower sensitivity in corners
+        }
+        
+        # FIXED: ID consistency tracking with better tolerance
+        self.track_id_mapping = {}
         self.next_stable_id = 1
-        self.position_tolerance = 50            # Pixels tolerance for ID mapping
+        self.position_tolerance = 60       # INCREASED: Better ID consistency (was 40)
         
         # Colors
         self.normal_color = (0, 255, 0)         # Green
@@ -96,38 +106,71 @@ class ImprovedAnomalyTracker:
         return new_stable_id
     
     def is_valid_detection(self, bbox: List[float], confidence: float) -> bool:
-        """Filter out low-quality detections"""
+        """FIXED: Less strict validation for better detection"""
         
-        # Confidence check
-        if confidence < self.confidence_threshold:
+        # FIXED: Lower confidence check
+        if confidence < self.confidence_threshold:  # Now 0.4 instead of 0.6
             return False
         
-        # Size check (filter very small or very large detections)
+        # FIXED: More lenient size check
         width = bbox[2] - bbox[0]
         height = bbox[3] - bbox[1]
         area = width * height
         
-        if area < 1000 or area > 50000:  # Reasonable person size range
+        if area < 500 or area > 80000:  # RELAXED: More lenient size range
             return False
         
-        # Aspect ratio check (person should be taller than wide)
+        # FIXED: More lenient aspect ratio check
         aspect_ratio = height / width if width > 0 else 0
-        if aspect_ratio < 1.2 or aspect_ratio > 4.0:
+        if aspect_ratio < 1.0 or aspect_ratio > 5.0:  # RELAXED: More lenient ratios
             return False
         
         return True
     
-    def smooth_anomaly_detection(self, stable_id: int, is_anomaly: bool, anomaly_score: float) -> Tuple[bool, str]:
-        """Apply temporal smoothing and stricter criteria for anomaly detection"""
+    def get_zone_sensitivity(self, bbox: List[float], frame_width: int, frame_height: int) -> float:
+        """Get context-aware sensitivity based on position in frame"""
+        center_x = (bbox[0] + bbox[2]) / 2
+        center_y = (bbox[1] + bbox[3]) / 2
+        
+        # Normalize coordinates
+        norm_x = center_x / frame_width
+        norm_y = center_y / frame_height
+        
+        # Define zones
+        if norm_x < 0.2 or norm_x > 0.8:  # Near edges (entrance/exit areas)
+            if norm_y < 0.3 or norm_y > 0.7:  # Corners
+                return self.zone_sensitivity['corner']
+            else:
+                return self.zone_sensitivity['entrance']
+        elif norm_y < 0.2 or norm_y > 0.8:  # Top/bottom edges
+            return self.zone_sensitivity['exit']
+        else:  # Center area
+            return self.zone_sensitivity['center']
+    
+    def advanced_anomaly_smoothing(self, stable_id: int, is_anomaly: bool, anomaly_score: float, 
+                                 bbox: List[float], frame_width: int, frame_height: int) -> Tuple[bool, str]:
+        """Advanced temporal smoothing with exponential decay and context awareness"""
         
         # Initialize tracking for new IDs
         if stable_id not in self.track_anomaly_history:
             self.track_anomaly_history[stable_id] = []
             self.track_confidence_history[stable_id] = []
+            self.track_exponential_scores[stable_id] = 0.0
         
-        # Add current detection
+        # Get context-aware sensitivity
+        zone_sensitivity = self.get_zone_sensitivity(bbox, frame_width, frame_height)
+        adjusted_score = anomaly_score * zone_sensitivity
+        
+        # Update exponential weighted score
+        current_exp_score = self.track_exponential_scores[stable_id]
+        self.track_exponential_scores[stable_id] = (
+            self.decay_factor * current_exp_score + 
+            (1 - self.decay_factor) * adjusted_score
+        )
+        
+        # Add current detection to history
         self.track_anomaly_history[stable_id].append(is_anomaly)
-        self.track_confidence_history[stable_id].append(anomaly_score)
+        self.track_confidence_history[stable_id].append(adjusted_score)
         
         # Keep only recent history
         max_history = self.anomaly_threshold_frames * 2
@@ -135,27 +178,34 @@ class ImprovedAnomalyTracker:
             self.track_anomaly_history[stable_id] = self.track_anomaly_history[stable_id][-max_history:]
             self.track_confidence_history[stable_id] = self.track_confidence_history[stable_id][-max_history:]
         
-        # Check if track is long enough for reliable anomaly detection
+        # Check if track is long enough for reliable detection
         track_length = len(self.track_anomaly_history[stable_id])
         if track_length < self.min_track_length:
-            return False, "TRACKING"
+            return False, "NORMAL"  # FIXED: Show as NORMAL instead of TRACKING
         
-        # Get recent anomaly window
+        # Get recent window for analysis
         recent_window = self.track_anomaly_history[stable_id][-self.anomaly_threshold_frames:]
         recent_scores = self.track_confidence_history[stable_id][-self.anomaly_threshold_frames:]
         
         if len(recent_window) < self.anomaly_threshold_frames:
             return False, "NORMAL"
         
-        # Calculate anomaly statistics
+        # Multiple criteria for anomaly confirmation
         anomaly_count = sum(recent_window)
         anomaly_ratio = anomaly_count / len(recent_window)
-        avg_score = np.mean(recent_scores)
+        avg_recent_score = np.mean(recent_scores)
+        exp_score = self.track_exponential_scores[stable_id]
         
-        # Stricter anomaly confirmation
-        if anomaly_ratio >= self.anomaly_confirmation_ratio and avg_score > 0.5:
+        # FIXED: Much more responsive anomaly confirmation
+        is_confirmed_anomaly = (
+            (anomaly_ratio >= self.anomaly_confirmation_ratio and avg_recent_score > 0.4) or  # LOWERED threshold
+            (exp_score > 0.6 and anomaly_ratio > 0.3) or  # LOWERED: More sensitive
+            (avg_recent_score > 1.0)  # LOWERED: Detect high scores faster
+        )
+        
+        if is_confirmed_anomaly:
             return True, "ANOMALY"
-        elif anomaly_ratio > 0.3:
+        elif anomaly_ratio > 0.2 or exp_score > 0.4:  # LOWERED: Earlier warning
             return False, "WARNING"
         else:
             return False, "NORMAL"
@@ -222,20 +272,18 @@ class ImprovedAnomalyTracker:
                             stable_id, box.tolist(), frame_idx
                         )
                         
-                        # Apply improved anomaly filtering
-                        is_confirmed_anomaly, status = self.smooth_anomaly_detection(
-                            stable_id, is_anomaly, anomaly_score
+                        # Apply advanced anomaly filtering
+                        is_confirmed_anomaly, status = self.advanced_anomaly_smoothing(
+                            stable_id, is_anomaly, anomaly_score, box.tolist(), width, height
                         )
                         
-                        # Choose color based on status
+                        # FIXED: Choose color based on status (removed TRACKING)
                         if is_confirmed_anomaly:
-                            color = self.anomaly_color
+                            color = self.anomaly_color      # Red for anomalies
                         elif status == "WARNING":
-                            color = self.warning_color
-                        elif status == "TRACKING":
-                            color = self.low_confidence_color
+                            color = self.warning_color      # Orange for warnings
                         else:
-                            color = self.normal_color
+                            color = self.normal_color       # Green for normal (no gray tracking)
                         
                         # Draw bounding box
                         x1, y1, x2, y2 = box.astype(int)
@@ -285,13 +333,12 @@ class ImprovedAnomalyTracker:
                     cv2.putText(annotated_frame, line, (10, 30 + i*25), 
                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                 
-                # Add legend
+                # FIXED: Updated legend (removed gray tracking)
                 legend_y = 150
                 legend_items = [
-                    ("Green: Normal", self.normal_color),
-                    ("Orange: Warning", self.warning_color), 
-                    ("Red: Anomaly", self.anomaly_color),
-                    ("Gray: Tracking", self.low_confidence_color)
+                    ("Green: Normal Behavior", self.normal_color),
+                    ("Orange: Suspicious (Warning)", self.warning_color), 
+                    ("Red: ANOMALY DETECTED!", self.anomaly_color)
                 ]
                 
                 for i, (text, color) in enumerate(legend_items):
