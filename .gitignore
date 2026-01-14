@@ -17,6 +17,23 @@ data/
 runs/
 *.pt
 
+# Large model files (>100MB)
+models/person_reid_model.pth
+models/*_reid_*.pth
+*.npy
+
+# Generated outputs
+*_output_*.mp4
+*demo_output*.mp4
+enhanced_demo_*.mp4
+integrated_demo_*.mp4
+stealing_demo_*.mp4
+
+# Analytics data
+enhanced_analytics_*.json
+integrated_analytics_*.json
+reid_data_*.pkl
+
 # OS files
 .DS_Store
 Thumbs.db
