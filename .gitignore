@@ -17,9 +17,8 @@ data/
 runs/
 *.pt
 
-# Large model files (>100MB)
-models/person_reid_model.pth
-models/*_reid_*.pth
+# Large model files (>100MB) - Now using Git LFS
+# models/person_reid_model.pth - Tracked by Git LFS
 *.npy
 
 # Generated outputs

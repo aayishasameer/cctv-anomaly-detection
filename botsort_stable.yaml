@@ -1,0 +1,35 @@
+tracker_type: botsort
+
+# Very low thresholds to maintain tracks through occlusions and pose changes
+track_high_thresh: 0.2
+track_low_thresh: 0.01
+new_track_thresh: 0.5
+track_buffer: 150  # Keep tracks alive for 5 seconds at 30fps
+match_thresh: 0.6  # Very lenient matching
+
+# Proximity and appearance - more lenient
+proximity_thresh: 0.7
+appearance_thresh: 0.3
+fuse_score: True
+
+# ReID settings
+with_reid: False
+reid_weights: "osnet_x0_25_msmt17.pt"
+model: "auto"
+
+# Camera motion compensation
+gmc_method: "sparseOptFlow"
+
+# Device
+device: cpu
+
+# Track persistence - keep tracks alive much longer
+max_age: 150  # 5 seconds at 30fps - don't kill tracks easily
+min_hits: 1  # Start tracking immediately
+
+# IOU threshold for matching - more lenient
+iou_threshold: 0.2
+
+# Confidence thresholds
+conf_thres: 0.2
+

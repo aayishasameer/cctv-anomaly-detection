@@ -1,0 +1,14 @@
+{
+  "frames_processed": 5770,
+  "total_time": 269.429132938385,
+  "avg_fps": 21.415649959870986,
+  "stealing_alerts": 0,
+  "reid_statistics": {
+    "total_detections": 5906,
+    "reid_matches": 5822,
+    "new_ids": 51,
+    "active_tracks": 1,
+    "match_rate": 0.985777175753471
+  },
+  "alerts_detail": []
+}

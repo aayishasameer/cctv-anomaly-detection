@@ -127,15 +127,20 @@ class GlobalPersonTracker:
         self.camera_tracks = defaultdict(dict)  # camera_id -> {local_id -> global_id}
         self.next_global_id = 1
         
-        # ReID parameters - More conservative to prevent false matches
-        self.similarity_threshold = 0.85  # Higher threshold to prevent false matches
-        self.max_time_gap = 30.0  # Maximum time gap for re-identification (seconds)
-        self.min_feature_quality = 0.6  # Higher quality threshold
-        self.strict_matching = True  # Enable strict matching mode
+        # ReID parameters - Optimized for single camera with pose changes
+        self.similarity_threshold = 0.65  # Lower threshold for same camera tracking
+        self.same_camera_threshold = 0.55  # Even lower for same camera re-appearance
+        self.max_time_gap = 60.0  # Longer time gap for re-identification (seconds)
+        self.min_feature_quality = 0.4  # Lower quality threshold to handle more poses
+        self.strict_matching = False  # Disable strict matching for better continuity
+        
+        # Temporal tracking for same camera
+        self.last_seen_positions = {}  # global_id -> (camera_id, bbox, timestamp)
+        self.position_threshold = 200  # Max pixel distance for same person
         
         # Feature gallery for each global person
         self.feature_gallery = defaultdict(list)  # global_id -> [features]
-        self.max_gallery_size = 10  # Maximum features per person
+        self.max_gallery_size = 20  # More features per person for better matching
         
         # Tracking statistics
         self.reid_matches = 0
@@ -188,7 +193,7 @@ class GlobalPersonTracker:
     def find_best_match(self, query_features: np.ndarray, 
                        camera_id: str, timestamp: float, 
                        current_bbox: List[float] = None) -> Optional[int]:
-        """Find best matching global person using ReID features with strict validation"""
+        """Find best matching global person using ReID features with spatial-temporal consistency"""
         
         if len(self.feature_gallery) == 0:
             return None
@@ -203,16 +208,10 @@ class GlobalPersonTracker:
             # Check time constraint
             person_data = self.global_persons.get(global_id, {})
             last_seen = person_data.get('last_seen', 0)
+            time_gap = timestamp - last_seen
             
-            if timestamp - last_seen > self.max_time_gap:
+            if time_gap > self.max_time_gap:
                 continue
-            
-            # Skip if person is currently active in the same camera
-            # This prevents assigning same global ID to multiple people in same camera
-            if camera_id in person_data.get('cameras', set()):
-                recent_detection_gap = timestamp - last_seen
-                if recent_detection_gap < 5.0:  # Less than 5 seconds ago
-                    continue
             
             # Calculate similarity with gallery features
             gallery_array = np.array(gallery_features)
@@ -221,23 +220,37 @@ class GlobalPersonTracker:
             avg_similarity = np.mean(similarities)
             
             # Use both max and average similarity for better matching
-            combined_similarity = 0.7 * max_similarity + 0.3 * avg_similarity
+            combined_similarity = 0.6 * max_similarity + 0.4 * avg_similarity
+            
+            # Spatial-temporal boost for same camera
+            if camera_id in person_data.get('cameras', set()) and current_bbox is not None:
+                if global_id in self.last_seen_positions:
+                    last_camera, last_bbox, last_time = self.last_seen_positions[global_id]
+                    
+                    if last_camera == camera_id and time_gap < 5.0:
+                        # Calculate position distance
+                        last_center = [(last_bbox[0] + last_bbox[2])/2, (last_bbox[1] + last_bbox[3])/2]
+                        curr_center = [(current_bbox[0] + current_bbox[2])/2, (current_bbox[1] + current_bbox[3])/2]
+                        distance = np.sqrt((last_center[0] - curr_center[0])**2 + (last_center[1] - curr_center[1])**2)
+                        
+                        # Boost similarity if person is nearby
+                        if distance < self.position_threshold:
+                            position_boost = 0.15 * (1.0 - distance / self.position_threshold)
+                            combined_similarity += position_boost
             
             if combined_similarity > best_similarity:
                 best_similarity = combined_similarity
                 best_match_id = global_id
         
-        # Strict matching: require high similarity AND consistency
-        if self.strict_matching:
-            if best_similarity >= self.similarity_threshold:
-                # Additional validation: check if this would create conflicts
-                if self._validate_match(best_match_id, camera_id, timestamp):
-                    return best_match_id
-            return None
-        else:
-            # Return match if above threshold
-            if best_similarity >= self.similarity_threshold:
-                return best_match_id
+        # Use different thresholds based on context
+        threshold = self.similarity_threshold
+        
+        # Lower threshold for same camera re-appearance
+        if best_match_id and camera_id in self.global_persons.get(best_match_id, {}).get('cameras', set()):
+            threshold = self.same_camera_threshold
+        
+        if best_similarity >= threshold:
+            return best_match_id
         
         return None
     
@@ -369,6 +382,9 @@ class GlobalPersonTracker:
                 if len(self.feature_gallery[global_id]) > self.max_gallery_size:
                     self.feature_gallery[global_id] = self.feature_gallery[global_id][-self.max_gallery_size:]
                 
+                # Update position tracking
+                self.last_seen_positions[global_id] = (camera_id, bbox, timestamp)
+                
                 self.reid_matches += 1
                 
             else:
@@ -394,6 +410,9 @@ class GlobalPersonTracker:
             
             # Initialize feature gallery
             self.feature_gallery[global_id] = [reid_features]
+            
+            # Initialize position tracking
+            self.last_seen_positions[global_id] = (camera_id, bbox, timestamp)
             
             self.new_persons += 1
         

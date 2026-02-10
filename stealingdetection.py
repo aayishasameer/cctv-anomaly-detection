@@ -19,46 +19,72 @@ class HandDetector:
     """Hand detection using MediaPipe"""
     
     def __init__(self):
-        self.mp_hands = mp.solutions.hands
-        self.hands = self.mp_hands.Hands(
-            static_image_mode=False,
-            max_num_hands=4,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        )
-        self.mp_draw = mp.solutions.drawing_utils
+        try:
+            # Try new MediaPipe API (v0.10+)
+            from mediapipe.tasks import python
+            from mediapipe.tasks.python import vision
+            # MediaPipe v0.10+ uses task-based API
+            self.use_new_api = True
+            print("⚠️  MediaPipe v0.10+ detected - hand detection requires model file")
+            print("   Disabling hand detection for now")
+            self.hands = None
+        except ImportError:
+            # Try legacy API
+            try:
+                self.mp_hands = mp.solutions.hands
+                self.hands = self.mp_hands.Hands(
+                    static_image_mode=False,
+                    max_num_hands=4,
+                    min_detection_confidence=0.5,
+                    min_tracking_confidence=0.5
+                )
+                self.mp_draw = mp.solutions.drawing_utils
+                self.use_new_api = False
+            except AttributeError:
+                print("⚠️  MediaPipe hand detection not available")
+                self.hands = None
+                self.use_new_api = False
     
     def detect_hands(self, frame: np.ndarray) -> List[Dict]:
         """Detect hands in frame and return hand information"""
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = self.hands.process(rgb_frame)
-        
         hands_info = []
-        if results.multi_hand_landmarks:
-            for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
-                # Get hand bounding box
-                h, w, _ = frame.shape
-                x_coords = [lm.x * w for lm in hand_landmarks.landmark]
-                y_coords = [lm.y * h for lm in hand_landmarks.landmark]
-                
-                x_min, x_max = int(min(x_coords)), int(max(x_coords))
-                y_min, y_max = int(min(y_coords)), int(max(y_coords))
-                
-                # Get hand center
-                center_x = (x_min + x_max) / 2
-                center_y = (y_min + y_max) / 2
-                
-                # Get handedness
-                handedness = "Right" if idx < len(results.multi_handedness) else "Unknown"
-                if idx < len(results.multi_handedness):
-                    handedness = results.multi_handedness[idx].classification[0].label
-                
-                hands_info.append({
-                    'bbox': [x_min, y_min, x_max, y_max],
-                    'center': [center_x, center_y],
-                    'handedness': handedness,
-                    'landmarks': hand_landmarks
-                })
+        
+        # If hand detection is not available, return empty list
+        if self.hands is None:
+            return hands_info
+        
+        try:
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = self.hands.process(rgb_frame)
+            
+            if results.multi_hand_landmarks:
+                for idx, hand_landmarks in enumerate(results.multi_hand_landmarks):
+                    # Get hand bounding box
+                    h, w, _ = frame.shape
+                    x_coords = [lm.x * w for lm in hand_landmarks.landmark]
+                    y_coords = [lm.y * h for lm in hand_landmarks.landmark]
+                    
+                    x_min, x_max = int(min(x_coords)), int(max(x_coords))
+                    y_min, y_max = int(min(y_coords)), int(max(y_coords))
+                    
+                    # Get hand center
+                    center_x = (x_min + x_max) / 2
+                    center_y = (y_min + y_max) / 2
+                    
+                    # Get handedness
+                    handedness = "Right" if idx < len(results.multi_handedness) else "Unknown"
+                    if idx < len(results.multi_handedness):
+                        handedness = results.multi_handedness[idx].classification[0].label
+                    
+                    hands_info.append({
+                        'bbox': [x_min, y_min, x_max, y_max],
+                        'center': [center_x, center_y],
+                        'handedness': handedness,
+                        'landmarks': hand_landmarks
+                    })
+        except Exception as e:
+            # Silently handle hand detection errors
+            pass
         
         return hands_info
 
@@ -605,40 +631,27 @@ class StealingDetectionSystem:
                             }
                             stealing_detections.append(detection_data)
                 
-                # Add comprehensive info panel
+                # Add simplified info panel
                 info_lines = [
-                    f"Frame: {frame_idx}/{total_frames} | Camera: {self.camera_id}",
-                    f"Hands: {len(hands)} | Stealing Alerts: {len(stealing_detections)}",
-                    f"Active Tracks: {len(self.track_histories)}"
+                    f"Frame: {frame_idx}/{total_frames}",
+                    f"Alerts: {len(stealing_detections)}"
                 ]
-                
-                if self.enable_reid and self.reid_tracker:
-                    reid_stats_current = self.reid_tracker.get_tracking_statistics()
-                    info_lines.append(f"Global Persons: {reid_stats_current['total_global_persons']} | ReID Matches: {reid_stats_current['reid_matches']}")
                 
                 for i, line in enumerate(info_lines):
                     cv2.putText(annotated_frame, line, (10, 30 + i*25), 
                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                 
-                # Add legend
-                legend_y = 150
+                # Add simplified color legend
+                legend_y = 100
                 legend_items = [
-                    ("Green: Normal", self.colors['normal']),
-                    ("Orange: Suspicious", self.colors['suspicious']),
-                    ("Dark Orange: High Risk", self.colors['high_risk']),
-                    ("Red: Stealing Detected", self.colors['stealing']),
-                    ("Purple: Confirmed Theft", self.colors['confirmed_theft'])
+                    ("Green - Normal", self.colors['normal']),
+                    ("Orange - Suspicious", self.colors['suspicious']),
+                    ("Red - Anomaly", self.colors['stealing'])
                 ]
                 
                 for i, (text, color) in enumerate(legend_items):
-                    cv2.putText(annotated_frame, text, (10, legend_y + i*18), 
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 2)
-                
-                # Add ReID legend
-                if self.enable_reid:
-                    cv2.putText(annotated_frame, "L:Local G:Global C:Cameras", 
-                              (10, legend_y + len(legend_items)*18 + 10), 
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 2)
+                    cv2.putText(annotated_frame, text, (10, legend_y + i*25), 
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
                 
                 # Write frame
                 if writer:

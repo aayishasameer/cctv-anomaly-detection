@@ -280,64 +280,30 @@ class DualWindowCCTVSystem:
                    (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         y_pos += line_height * 2
         
-        # Performance
-        cv2.putText(panel, "PERFORMANCE", (10, y_pos), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 2)
-        y_pos += line_height
+        # Color Legend
+        cv2.putText(panel, "COLOR LEGEND", (10, y_pos), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        y_pos += line_height + 10
         
-        perf = self.control_panel_data['performance']
-        cv2.putText(panel, f"Avg FPS: {perf['avg_fps']:.1f}", 
-                   (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        y_pos += line_height
-        
-        cv2.putText(panel, f"Process Time: {perf['processing_time']:.1f}s", 
-                   (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        y_pos += line_height
-        
-        # Improved detection stats
-        if hasattr(self, 'behavior_analyzer'):
-            detection_stats = self.anomaly_detector.get_system_statistics()
-            cv2.putText(panel, f"False Positive Reduction: {detection_stats['fp_reduction_rate']:.1%}", 
-                       (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
-            y_pos += line_height
-        
-        y_pos += line_height
-        
-        # Recent Alerts
-        cv2.putText(panel, "RECENT ALERTS", (10, y_pos), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        y_pos += line_height
-        
-        alerts = self.control_panel_data['recent_alerts']
-        if not alerts:
-            cv2.putText(panel, "No recent alerts", 
-                       (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (128, 128, 128), 1)
-        else:
-            for i, alert in enumerate(alerts[-5:]):  # Show last 5 alerts
-                alert_text = f"G:{alert['global_id']} {alert['type']}"
-                alert_color = self.colors.get(alert['category'], (255, 255, 255))
-                cv2.putText(panel, alert_text, 
-                           (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.4, alert_color, 1)
-                y_pos += 20
-        
-        # Legend at bottom
-        legend_y = height - 120
-        cv2.putText(panel, "COLOR LEGEND", (10, legend_y), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-        legend_y += 20
-        
+        # Draw color boxes with labels
+        box_size = 20
         legend_items = [
-            ("Green: Normal", self.colors['normal']),
-            ("Orange: Suspicious", self.colors['suspicious']),
-            ("Red: Anomaly", self.colors['anomaly'])
+            ("Normal", self.colors['normal']),
+            ("Suspicious", self.colors['suspicious']),
+            ("Anomaly", self.colors['anomaly'])
         ]
         
         for text, color in legend_items:
-            cv2.putText(panel, text, (10, legend_y), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
-            legend_y += 18
+            # Draw colored box
+            cv2.rectangle(panel, (10, y_pos - 15), (10 + box_size, y_pos - 15 + box_size), color, -1)
+            cv2.rectangle(panel, (10, y_pos - 15), (10 + box_size, y_pos - 15 + box_size), (255, 255, 255), 1)
+            
+            # Draw text next to box
+            cv2.putText(panel, text, (40, y_pos), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            y_pos += 30
         
-        # Controls
+        # Controls at bottom
         controls_y = height - 40
         cv2.putText(panel, "Controls: Q=Quit, SPACE=Pause", (10, controls_y), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
@@ -375,7 +341,8 @@ class DualWindowCCTVSystem:
         if len(self.control_panel_data['recent_alerts']) > 10:
             self.control_panel_data['recent_alerts'] = self.control_panel_data['recent_alerts'][-10:]
     
-    def process_video(self, video_path: str, output_path: str = None, display: bool = True):
+    def process_video(self, video_path: str, output_path: str = None, display: bool = True, 
+                     fullscreen: bool = False, window_scale: float = 1.0):
         """Process video with dual window display"""
         
         print(f"\n🎬 Processing Video: {os.path.basename(video_path)}")
@@ -392,6 +359,20 @@ class DualWindowCCTVSystem:
         print(f"📊 Video Info: {width}x{height} @ {fps}fps, {total_frames} frames")
         print(f"📹 Camera ID: {self.camera_id}")
         print(f"🎯 Dual Window Mode: Clean Video + Control Panel")
+        
+        # Setup windows if displaying
+        if display:
+            cv2.namedWindow('CCTV Video Feed - Clean Output', cv2.WINDOW_NORMAL)
+            cv2.namedWindow('CCTV Control Panel', cv2.WINDOW_NORMAL)
+            
+            if fullscreen:
+                cv2.setWindowProperty('CCTV Video Feed - Clean Output', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+                print("🖥️  Fullscreen mode enabled")
+            elif window_scale != 1.0:
+                scaled_width = int(width * window_scale)
+                scaled_height = int(height * window_scale)
+                cv2.resizeWindow('CCTV Video Feed - Clean Output', scaled_width, scaled_height)
+                print(f"🖥️  Window scaled to {window_scale}x ({scaled_width}x{scaled_height})")
         
         # Initialize zone detector
         self._init_zone_detector(width, height)
@@ -419,7 +400,7 @@ class DualWindowCCTVSystem:
                 # Person detection and tracking
                 results = self.yolo_model.track(
                     source=frame,
-                    tracker="botsort.yaml",
+                    tracker="botsort_stable.yaml",
                     persist=True,
                     classes=[0],  # person only
                     conf=0.4,
@@ -563,6 +544,8 @@ def main():
     parser.add_argument('--output', '-o', help='Output video path (clean, no overlays)')
     parser.add_argument('--camera-id', '-c', default='cam1', help='Camera ID for ReID')
     parser.add_argument('--no-display', action='store_true', help='Disable video display')
+    parser.add_argument('--fullscreen', '-f', action='store_true', help='Display in fullscreen mode')
+    parser.add_argument('--window-scale', '-s', type=float, default=1.0, help='Window scale factor (e.g., 1.5 for 150%)')
     
     args = parser.parse_args()
     
@@ -594,7 +577,9 @@ def main():
         results = system.process_video(
             video_path=args.input,
             output_path=args.output,
-            display=not args.no_display
+            display=not args.no_display,
+            fullscreen=args.fullscreen,
+            window_scale=args.window_scale
         )
         
         print(f"\n🏆 DUAL WINDOW CCTV SYSTEM PROCESSING SUCCESSFUL!")
