@@ -7,13 +7,13 @@ tracker_type: botsort
 # Detection thresholds
 track_high_thresh: 0.5
 track_low_thresh: 0.1
-new_track_thresh: 0.6
+new_track_thresh: 0.8  # Increased from 0.6 for more stable new tracks
 
-# PHASE 2: Increased track buffer for better occlusion handling
-track_buffer: 60  # Keep tracks alive for 60 frames during occlusion
+# PHASE 3: Further increased track buffer for maximum occlusion handling
+track_buffer: 120  # Keep tracks alive for 120 frames during occlusion (4 seconds at 30fps)
 
-# PHASE 2: Adjusted matching thresholds
-match_thresh: 0.6  # Lower = more lenient matching (reduce ID switches)
+# PHASE 3: Stricter matching thresholds for better ID stability
+match_thresh: 0.9  # Higher = stricter matching (prevent false matches)
 proximity_thresh: 0.7  # Spatial proximity weight
 appearance_thresh: 0.25  # Lower appearance weight (rely more on motion)
 
