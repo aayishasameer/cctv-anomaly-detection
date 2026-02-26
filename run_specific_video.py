@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """
-Run CCTV System on Specific Video
+Run Simplified CCTV System on Specific Video
+Uses only local tracker IDs for stable tracking
 """
 
 import os
 import cv2
 import time
-from complete_cctv_system import CompleteCCTVSystem
+from simple_cctv_system import SimpleCCTVSystem
 
 def run_video_detection():
     """Run detection on specific video"""
     
-    print("🚀 CCTV ANOMALY DETECTION SYSTEM")
+    print("🚀 SIMPLIFIED CCTV ANOMALY DETECTION SYSTEM")
     print("=" * 70)
+    print("📌 Using local tracker IDs only (no Global ReID)")
+    print("")
     
     # Specific video path
     video_path = "cctv-anomaly-detection/cctv-anomaly-detection-1/working/test_anomaly/Shoplifting020_x264.mp4"
@@ -37,11 +40,11 @@ def run_video_detection():
     print(f"   Frames: {total_frames}")
     print(f"   Duration: {duration:.1f}s")
     
-    # Initialize system
-    print(f"\n⚙️  INITIALIZING SYSTEM...")
+    # Initialize simplified system
+    print(f"\n⚙️  INITIALIZING SIMPLIFIED SYSTEM...")
     try:
-        system = CompleteCCTVSystem(camera_id="shoplifting_test")
-        print("✅ System initialized with all trained models")
+        system = SimpleCCTVSystem(camera_id="shoplifting_test")
+        print("✅ System initialized with local tracking only")
     except Exception as e:
         print(f"❌ Initialization failed: {e}")
         import traceback
@@ -49,7 +52,7 @@ def run_video_detection():
         return
     
     # Output path
-    output_path = "shoplifting_detection_output.mp4"
+    output_path = "simple_shoplifting_detection_output.mp4"
     
     print(f"\n🎬 PROCESSING VIDEO...")
     print(f"💾 Output: {output_path}")
@@ -77,19 +80,10 @@ def run_video_detection():
         print(f"   Processing FPS: {results['avg_fps']:.1f}")
         print(f"   Speed ratio: {results['avg_fps']/fps:.2f}x realtime")
         
-        if 'reid_statistics' in results:
-            stats = results['reid_statistics']
-            print(f"\n👥 PERSON TRACKING:")
-            print(f"   Total persons detected: {stats['total_global_persons']}")
-            print(f"   ReID matches: {stats['reid_matches']}")
-            print(f"   Match rate: {stats['reid_match_rate']:.1%}")
-        
-        if 'anomaly_statistics' in results:
-            stats = results['anomaly_statistics']
-            print(f"\n🚨 ANOMALY DETECTION:")
-            print(f"   Normal behavior: {stats.get('normal', 0)} detections")
-            print(f"   Suspicious behavior: {stats.get('suspicious', 0)} detections")
-            print(f"   Anomalous behavior: {stats.get('anomaly', 0)} detections")
+        print(f"\n👥 TRACKING STATISTICS:")
+        print(f"   Total tracks: {results['total_tracks']}")
+        print(f"   Active tracks: {results['active_tracks']}")
+        print(f"   Tracking method: Local tracker IDs only")
         
         print(f"\n💾 OUTPUT FILES:")
         print(f"   Video: {output_path}")
@@ -104,6 +98,12 @@ def run_video_detection():
         print(f"✅ DETECTION COMPLETE!")
         print(f"{'='*70}")
         
+        print(f"\n📌 BENEFITS OF SIMPLIFIED SYSTEM:")
+        print(f"   ✅ No Global ReID = More stable IDs")
+        print(f"   ✅ Uses only tracker IDs = No ID reassignment")
+        print(f"   ✅ Single camera optimized = Better performance")
+        print(f"   ✅ Reduced complexity = More reliable")
+        
         # Extract sample frames
         print(f"\n📸 Extracting sample frames for preview...")
         extract_frames(output_path)
@@ -116,7 +116,7 @@ def run_video_detection():
 def extract_frames(video_path, num_frames=12):
     """Extract sample frames from output"""
     
-    output_dir = "detection_results"
+    output_dir = "simple_detection_results"
     os.makedirs(output_dir, exist_ok=True)
     
     cap = cv2.VideoCapture(video_path)
@@ -145,7 +145,7 @@ def extract_frames(video_path, num_frames=12):
     cap.release()
     
     print(f"✅ Extracted {saved} frames to {output_dir}/")
-    print(f"💡 View these frames to see detection results with bounding boxes")
+    print(f"💡 View these frames to see stable tracking with local IDs")
 
 if __name__ == "__main__":
     run_video_detection()

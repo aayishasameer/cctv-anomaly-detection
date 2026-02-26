@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """
-Quick Demo Runner - Run CCTV System Now
+Quick Demo Runner - Run Simplified CCTV System
+Uses only local tracker IDs for stable single-camera tracking
 """
 
 import os
 import cv2
 import time
-from complete_cctv_system import CompleteCCTVSystem
+from simple_cctv_system import SimpleCCTVSystem
 
 def run_demo():
     """Run demo without GUI display"""
     
-    print("🚀 CCTV ANOMALY DETECTION SYSTEM")
+    print("🚀 SIMPLIFIED CCTV ANOMALY DETECTION SYSTEM")
     print("=" * 60)
+    print("📌 Using local tracker IDs only (no Global ReID)")
+    print("")
     
     # Find test video
     test_video = "cctv-anomaly-detection/cctv-anomaly-detection-1/working/test_anomaly/Shoplifting020_x264.mp4"
@@ -31,10 +34,10 @@ def run_demo():
     
     print(f"📹 Processing: {os.path.basename(test_video)}")
     
-    # Initialize system
+    # Initialize simplified system
     try:
-        print("\n⚙️  Initializing system with trained models...")
-        system = CompleteCCTVSystem(camera_id="demo")
+        print("\n⚙️  Initializing simplified system...")
+        system = SimpleCCTVSystem(camera_id="demo")
         print("✅ System initialized successfully")
     except Exception as e:
         print(f"❌ System initialization failed: {e}")
@@ -43,7 +46,7 @@ def run_demo():
         return
     
     # Process video without display
-    output_path = f"demo_output_{int(time.time())}.mp4"
+    output_path = f"simple_demo_output_{int(time.time())}.mp4"
     
     print(f"\n🎬 Processing video (headless mode)...")
     print(f"💾 Output will be saved to: {output_path}")
@@ -63,25 +66,14 @@ def run_demo():
         print(f"   Frames processed: {results['frames_processed']}")
         print(f"   Processing FPS: {results['avg_fps']:.1f}")
         print(f"   Total runtime: {results.get('total_time', 0):.1f}s")
-        
-        if 'reid_statistics' in results:
-            print(f"\n👥 PERSON TRACKING:")
-            print(f"   Total persons: {results['reid_statistics']['total_global_persons']}")
-            print(f"   ReID matches: {results['reid_statistics']['reid_matches']}")
-            print(f"   Match rate: {results['reid_statistics']['reid_match_rate']:.1%}")
-        
-        # Show anomaly statistics
-        if 'anomaly_statistics' in results:
-            stats = results['anomaly_statistics']
-            print(f"\n🚨 ANOMALY DETECTION:")
-            print(f"   Normal behavior: {stats.get('normal', 0)} detections")
-            print(f"   Suspicious behavior: {stats.get('suspicious', 0)} detections") 
-            print(f"   Anomalous behavior: {stats.get('anomaly', 0)} detections")
+        print(f"   Total tracks: {results['total_tracks']}")
+        print(f"   Active tracks: {results['active_tracks']}")
         
         print(f"\n💾 OUTPUT FILES:")
         print(f"   Video: {output_path}")
-        print(f"   ReID data: reid_data_demo.pkl")
         print(f"\n✅ Demo completed successfully!")
+        print(f"\n📌 Note: This system uses only local tracker IDs")
+        print(f"   No Global ReID = More stable tracking!")
         
     except Exception as e:
         print(f"\n❌ Demo failed: {e}")
