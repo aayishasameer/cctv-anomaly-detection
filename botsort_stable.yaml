@@ -1,0 +1,37 @@
+# Stable BotSORT Configuration for Single Camera CCTV
+# PHASE 2: Improved Tracking Stability
+# Optimized to reduce ID switching during occlusions and crossings
+
+tracker_type: botsort
+
+# Detection thresholds
+track_high_thresh: 0.5
+track_low_thresh: 0.1
+new_track_thresh: 0.6
+
+# PHASE 2: Increased track buffer for better occlusion handling
+track_buffer: 60  # Keep tracks alive for 60 frames during occlusion
+
+# PHASE 2: Adjusted matching thresholds
+match_thresh: 0.6  # Lower = more lenient matching (reduce ID switches)
+proximity_thresh: 0.7  # Spatial proximity weight
+appearance_thresh: 0.25  # Lower appearance weight (rely more on motion)
+
+# Score fusion
+fuse_score: True
+
+# ReID settings - DISABLED for single camera
+with_reid: False
+
+# Camera motion compensation
+gmc_method: "sparseOptFlow"
+
+# Device
+device: cpu
+
+# Track lifecycle
+max_age: 60  # Increased from 30 - keep tracks longer
+min_hits: 3  # Require 3 consecutive detections before confirming track
+
+# Additional stability settings
+iou_threshold: 0.3  # IoU threshold for matching
